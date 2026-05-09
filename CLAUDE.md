@@ -12,6 +12,49 @@ Stack principal: Python 3.12 · FastAPI · SQLAlchemy · Alembic · PostgreSQL 1
 
 ---
 
+## Arquitetura em Camadas — Backend
+
+O backend segue o padrão de separação em quatro camadas. Cada camada só conhece a imediatamente abaixo dela.
+
+```
+  HTTP Request
+       │
+       ▼
+┌─────────────┐
+│  CONTROLLER │  routers/        → recebe a requisição, valida o schema Pydantic,
+│             │                    chama o Service e devolve a resposta HTTP
+└──────┬──────┘
+       │
+       ▼
+┌─────────────┐
+│   SERVICE   │  services/       → lógica de negócio (regras, autenticação, JWT,
+│             │                    bcrypt); orquestra chamadas ao Repository
+└──────┬──────┘
+       │
+       ▼
+┌─────────────┐
+│ REPOSITORY  │  repositories/   → única camada que faz queries SQLAlchemy;
+│             │                    recebe a Session via injeção de dependência
+└──────┬──────┘
+       │
+       ▼
+┌─────────────┐
+│   BANCO     │  database.py     → engine + SessionLocal; PostgreSQL via
+│             │  + PostgreSQL      psycopg2-binary
+└─────────────┘
+```
+
+| Camada | Pasta | Responsabilidade |
+|---|---|---|
+| Controller | `routers/` | Rota HTTP, validação de entrada (Pydantic), resposta |
+| Service | `services/` | Regras de negócio, JWT, bcrypt, orquestração |
+| Repository | `repositories/` | Toda e qualquer query ao banco (SQLAlchemy) |
+| Database | `database.py` | Engine, Session, Base declarativa |
+
+> **Regra:** routers nunca acessam o banco diretamente — sempre via service/repository. Services nunca importam `Session` diretamente — recebem via injeção de dependência do FastAPI.
+
+---
+
 ## Estrutura do Repositório
 
 ```
@@ -30,12 +73,12 @@ NetMapper/
 │   │   └── versions/        # migrations versionadas
 │   │       └── 0001_create_initial_tables.py
 │   ├── main.py              # inicialização do FastAPI
-│   ├── database.py          # engine + sessão SQLAlchemy
+│   ├── database.py          # engine + sessão SQLAlchemy  [CAMADA: Database]
 │   ├── models/              # User, Room, Measurement (SQLAlchemy)
 │   ├── schemas/             # contratos Pydantic (auth, room, measurement)
-│   ├── routers/             # auth, rooms, measurements, speedtest
-│   ├── services/
-│   │   └── auth_service.py  # bcrypt + JWT
+│   ├── routers/             # auth, rooms, measurements, speedtest [CAMADA: Controller]
+│   ├── services/            # lógica de negócio, JWT, bcrypt       [CAMADA: Service]
+│   ├── repositories/        # queries SQLAlchemy isoladas           [CAMADA: Repository]
 │   └── assets/
 │       └── garbage.bin      # ~10 MB para teste de download (não versionado)
 └── frontend/
@@ -223,6 +266,34 @@ docker compose exec backend alembic current
 - **Nunca altere o banco diretamente** — sempre via migration.
 - Os arquivos em `alembic/versions/` são commitados no git e representam o histórico do schema.
 - O `garbage.bin` não é versionado (gerado com `dd if=/dev/urandom of=assets/garbage.bin bs=1M count=10`).
+
+---
+
+## Divisão de Responsabilidades por Camada
+
+### Controller — `routers/`
+- Recebe a requisição HTTP e extrai os dados (path, query, body)
+- Valida a entrada via schemas Pydantic
+- Chama o Service correspondente
+- Retorna a resposta HTTP com o schema de saída
+- **Não faz queries** — nunca importa `Session` diretamente
+
+### Service — `services/`
+- Contém toda a lógica de negócio e regras da aplicação
+- Exemplos: validar credenciais, gerar/verificar JWT, hashear senhas, checar permissões
+- Chama o Repository para ler/escrever dados
+- **Não conhece** detalhes HTTP (status code, headers) nem queries SQL
+
+### Repository — `repositories/`
+- Única camada autorizada a escrever queries SQLAlchemy
+- Recebe a `Session` via injeção de dependência do FastAPI
+- Métodos objetivos: `get_by_email`, `create_user`, `list_rooms_by_user`, etc.
+- **Não contém** lógica de negócio — só acesso a dados
+
+### Database — `database.py` + PostgreSQL
+- Define a `engine`, `SessionLocal` e `Base` declarativa
+- A função `get_db()` é o provider de sessão injetado pelo FastAPI
+- O schema físico é gerenciado exclusivamente pelo Alembic
 
 ---
 

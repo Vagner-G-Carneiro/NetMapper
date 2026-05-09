@@ -1,11 +1,12 @@
-from fastapi import APIRouter, Depends, Query, HTTPException
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from typing import List, Optional
 
 from database import get_db
-from models import User, Room, Measurement
+from models import User
 from schemas.measurement import MeasurementCreate, MeasurementOut
 from services.auth_service import get_current_user
+import services.measurement_service as measurement_service
 
 router = APIRouter(prefix="/measurements", tags=["measurements"])
 
@@ -16,14 +17,7 @@ def create_measurement(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    room = db.query(Room).filter(Room.id == data.room_id, Room.user_id == current_user.id).first()
-    if not room:
-        raise HTTPException(status_code=404, detail="Cômodo não encontrado")
-    m = Measurement(**data.model_dump(), user_id=current_user.id)
-    db.add(m)
-    db.commit()
-    db.refresh(m)
-    return m
+    return measurement_service.create_measurement(db, data, current_user.id)
 
 
 @router.get("", response_model=List[MeasurementOut])
@@ -32,7 +26,4 @@ def list_measurements(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    q = db.query(Measurement).filter(Measurement.user_id == current_user.id)
-    if room_id:
-        q = q.filter(Measurement.room_id == room_id)
-    return q.order_by(Measurement.measured_at.desc()).all()
+    return measurement_service.list_measurements(db, current_user.id, room_id)

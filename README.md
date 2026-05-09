@@ -309,15 +309,50 @@ backend:
       condition: service_healthy
 ```
 
+### Arquitetura em Camadas
+
+O backend é organizado em quatro camadas com responsabilidades isoladas:
+
+```
+  Requisição HTTP
+        │
+        ▼
+┌──────────────┐
+│  CONTROLLER  │  routers/        → valida entrada (Pydantic), chama Service,
+│              │                    devolve resposta HTTP
+└──────┬───────┘
+       │
+       ▼
+┌──────────────┐
+│   SERVICE    │  services/       → regras de negócio, JWT, bcrypt,
+│              │                    orquestra chamadas ao Repository
+└──────┬───────┘
+       │
+       ▼
+┌──────────────┐
+│  REPOSITORY  │  repositories/   → única camada com queries SQLAlchemy;
+│              │                    recebe Session via injeção de dependência
+└──────┬───────┘
+       │
+       ▼
+┌──────────────┐
+│   DATABASE   │  database.py     → engine, SessionLocal, Base declarativa
+│              │  + PostgreSQL      (schema gerenciado pelo Alembic)
+└──────────────┘
+```
+
+> **Regra de ouro:** cada camada só chama a imediatamente abaixo dela. Routers nunca fazem queries; Services nunca conhecem detalhes HTTP.
+
 ### Estrutura de Pastas
 ```
 backend/
 ├── Dockerfile
+├── entrypoint.sh            ← roda alembic upgrade head antes do uvicorn
 ├── requirements.txt
 ├── main.py                  ← inicializa o FastAPI, CORS e routers
-├── database.py              ← engine, sessão e Base do SQLAlchemy
+├── database.py              ← engine, sessão e Base do SQLAlchemy  [Database]
 │
-├── models/                  ← tabelas mapeadas (SQLAlchemy)
+├── models/                  ← tabelas mapeadas (SQLAlchemy ORM)
 │   ├── user.py
 │   ├── room.py
 │   └── measurement.py
@@ -327,14 +362,19 @@ backend/
 │   ├── room.py
 │   └── measurement.py
 │
-├── routers/                 ← rotas separadas por domínio
+├── routers/                 ← [Controller] rotas separadas por domínio
 │   ├── auth.py              ← /auth/register  /auth/login
 │   ├── rooms.py             ← /rooms (CRUD)
 │   ├── measurements.py      ← /measurements
 │   └── speedtest.py         ← /backend/garbage  /backend/empty  /backend/getIp
 │
-├── services/
-│   └── auth_service.py      ← lógica de JWT e bcrypt
+├── services/                ← [Service] lógica de negócio
+│   └── auth_service.py      ← JWT, bcrypt, get_current_user
+│
+├── repositories/            ← [Repository] queries SQLAlchemy isoladas
+│   ├── user_repository.py
+│   ├── room_repository.py
+│   └── measurement_repository.py
 │
 └── assets/
     └── garbage.bin          ← arquivo ~10MB para teste de download

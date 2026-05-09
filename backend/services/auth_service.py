@@ -8,6 +8,8 @@ import os
 
 from database import get_db
 from models import User
+from schemas.auth import UserCreate, UserLogin, Token, UserOut
+import repositories.user_repository as user_repo
 
 SECRET_KEY = os.getenv("SECRET_KEY", "changeme")
 ALGORITHM = os.getenv("ALGORITHM", "HS256")
@@ -39,13 +41,26 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     )
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        user_id: int = payload.get("sub")
+        user_id: str = payload.get("sub")
         if user_id is None:
             raise credentials_exc
     except JWTError:
         raise credentials_exc
 
-    user = db.query(User).filter(User.id == int(user_id)).first()
+    user = user_repo.get_by_id(db, int(user_id))
     if user is None:
         raise credentials_exc
     return user
+
+
+def register_user(db: Session, data: UserCreate) -> User:
+    if user_repo.get_by_email(db, data.email):
+        raise HTTPException(status_code=400, detail="E-mail já cadastrado")
+    return user_repo.create(db, name=data.name, email=data.email, password_hash=hash_password(data.password))
+
+
+def login_user(db: Session, data: UserLogin) -> Token:
+    user = user_repo.get_by_email(db, data.email)
+    if not user or not verify_password(data.password, user.password_hash):
+        raise HTTPException(status_code=401, detail="Credenciais inválidas")
+    return Token(access_token=create_access_token({"sub": str(user.id)}))
