@@ -196,13 +196,49 @@ db:
 └──────────────────────────────┘
 ```
 
+### Migrations — Alembic
+
+O Alembic está configurado e versionado. O container backend roda `alembic upgrade head` automaticamente no startup via `entrypoint.sh`.
+
+**Estrutura de arquivos:**
+```
+backend/
+├── alembic.ini                          ← configuração principal
+├── alembic/
+│   ├── env.py                           ← lê DATABASE_URL do ambiente
+│   ├── script.py.mako                   ← template de novas migrations
+│   └── versions/
+│       └── 0001_create_initial_tables.py  ← cria users, rooms, measurements
+```
+
+**Comandos úteis:**
+```bash
+# Criar nova migration (detecção automática a partir dos models)
+docker compose exec backend alembic revision --autogenerate -m "nome_da_mudanca"
+
+# Aplicar todas as migrations pendentes
+docker compose exec backend alembic upgrade head
+
+# Reverter a última migration
+docker compose exec backend alembic downgrade -1
+
+# Ver versão atual do banco
+docker compose exec backend alembic current
+
+# Ver histórico completo
+docker compose exec backend alembic history --verbose
+```
+
+> **Regra:** nunca altere o banco diretamente. Toda mudança de schema deve passar por uma migration.
+
 ### Checklist
-- [ ] Configurar serviço `db` no `docker-compose.yml`
-- [ ] Criar o arquivo `.env` com as variáveis do banco
-- [ ] Criar `backend/database.py` com engine e sessão SQLAlchemy
-- [ ] Criar models: `User`, `Room`, `Measurement`
-- [ ] Iniciar Alembic: `alembic init alembic`
-- [ ] Gerar e rodar a primeira migration: `alembic upgrade head`
+- [x] Configurar serviço `db` no `docker-compose.yml`
+- [x] Criar o arquivo `.env` com as variáveis do banco
+- [x] Criar `backend/database.py` com engine e sessão SQLAlchemy
+- [x] Criar models: `User`, `Room`, `Measurement`
+- [x] Configurar Alembic: `alembic.ini` + `alembic/env.py`
+- [x] Criar e versionar a primeira migration: `0001_create_initial_tables.py`
+- [x] `entrypoint.sh` aplica `alembic upgrade head` antes de subir o uvicorn
 - [ ] Validar a conexão e a criação das tabelas no PostgreSQL
 
 ---
